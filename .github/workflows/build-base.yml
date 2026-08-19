@@ -7,6 +7,8 @@ name: Build Base Image
 #     LibreOffice / OpenJDK 等安全更新（CVE 修复）不会因路径过滤而自动进入镜像，
 #     定时重建 + apt 安装最新版本是让基础镜像保持安全的关键。
 #  3) workflow_dispatch 手动触发
+# base 构建成功后自动级联重建最终镜像 kkfileview:latest（mvn package + buildx + 冒烟），
+# 不发 Release、不跑完整 deploy-test；:VERSION 不动（版本号是应用语义，base 是 OS 层更新）。
 on:
   push:
     paths:
@@ -59,3 +61,88 @@ jobs:
             --provenance=false \
             --push \
             building/base
+
+  # base 构建成功后，级联重建最终镜像 :latest（含冒烟测试）。
+  # 不推 :VERSION（版本号是应用语义，base 是 OS 层更新，只滚动 :latest）。
+  # 不调用完整 deploy-test（每周定时跑会噪音过大），仅做轻量冒烟。
+  # 不发 GitHub Release（Release 只在推 tag 时由 release.yml 创建）。
+  rebuild-final:
+    name: Rebuild final image :latest
+    needs: build-base
+    runs-on: ubuntu-22.04
+    permissions:
+      packages: write
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set lowercased image vars
+        run: |
+          echo "FINAL_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/kkfileview" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU (multi-arch)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build with Maven (package)
+        run: mvn -B package -Dmaven.test.skip=true --file pom.xml
+
+      # 构建并推送最终镜像 :latest（FROM 刚重建的 base:latest + ADD jar 发行包）。
+      # 只推 :latest，不推 :VERSION（base 更新不产生新版本号）。
+      - name: Build and push final image :latest (amd64 + arm64)
+        run: |
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --file building/final/Dockerfile \
+            --tag "${FINAL_IMAGE}:latest" \
+            --cache-from type=registry,ref="${FINAL_IMAGE}:latest" \
+            --cache-to type=inline \
+            --provenance=false \
+            --push \
+            .
+
+      # 冒烟测试：拉取刚发布的 :latest 并运行，验证服务可正常启动并响应。
+      - name: Smoke test published :latest
+        run: |
+          set -euo pipefail
+          IMG="${FINAL_IMAGE}:latest"
+          echo "Pulling ${IMG}"
+          docker pull "${IMG}"
+          CID=$(docker run -d --rm -p 8012:8012 "${IMG}")
+          trap 'docker stop "${CID}" >/dev/null 2>&1 || true' EXIT
+          ready=false
+          for i in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:8012/ >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" != "true" ]; then
+            echo "ERROR: kkFileView did not become ready within 240s"
+            docker logs "${CID}" || true
+            exit 1
+          fi
+          echo "OK: GET / returned 200"
+          if docker logs "${CID}" 2>&1 | grep -qi "Started"; then
+            echo "OK: startup completion flag found in logs"
+          else
+            echo "WARN: 'Started' flag not found in logs (service responded 200, treating as OK)"
+          fi
