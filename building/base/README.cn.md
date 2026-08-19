@@ -15,14 +15,14 @@
 基础镜像发布到 GitHub Container Registry：
 
 ```
-ghcr.io/zhuyifeiruichuang/kkfileview-base:<版本号>
+ghcr.io/zhuyifeiruichuang/kkfileview-base:latest
 ```
 
-`<版本号>` 与代码仓库版本一致（如 `5.0.2`），同时别名为 `:latest`。
+基础镜像**不区分版本**——只保留一个 `:latest` tag。这是有意设计：基础镜像仅包含 OS 运行时（Ubuntu + JRE + LibreOffice + 字体），与版本无关。版本号 tag 只在最终镜像（`kkfileview`）上区分。
 
 ## 自动构建（推荐）
 
-通常你无需手动构建基础镜像。`build-base.yml` 工作流**仅在 `building/base/**` 下的文件变更时**才会重建并推送 `ghcr.io/zhuyifeiruichuang/kkfileview-base:latest`（路径过滤），因此昂贵的 LibreOffice 层不会在每次代码变更时重构建。发版时，`release.yml` 直接复用该 `:latest`，并通过 `imagetools create` 将其别名为 `:<版本号>`（零层重打 tag，不重新构建）。
+通常你无需手动构建基础镜像。`build-base.yml` 工作流**仅在 `building/base/**` 下的文件变更时**才会重建并推送 `ghcr.io/zhuyifeiruichuang/kkfileview-base:latest`（路径过滤），因此昂贵的 LibreOffice 层不会在每次代码变更时重构建。发版时，`release.yml` 只需检查 `:latest` 是否存在（若缺失则从源码兜底构建）——基础镜像不创建任何版本号 tag。
 
 如需手动强制重建：
 
@@ -33,10 +33,10 @@ gh workflow run build-base.yml
 
 ## 本地手动构建
 
-> 以 tag `5.0.2` 为例。本项目维护的 Dockerfile 已考虑跨平台；若要构建 arm64 镜像，在 arm64 机器上执行同样的命令即可。
+> 基础镜像无论版本如何，只使用 `:latest` tag。本项目维护的 Dockerfile 已考虑跨平台；若要构建 arm64 镜像，在 arm64 机器上执行同样的命令即可。
 
 ```shell
-docker build --tag ghcr.io/zhuyifeiruichuang/kkfileview-base:5.0.2 .
+docker build --tag ghcr.io/zhuyifeiruichuang/kkfileview-base:latest .
 ```
 
 ## 跨平台构建
@@ -58,5 +58,5 @@ docker run --privileged --rm tonistiigi/binfmt --install all
 跨平台构建并推送示例：
 
 ```shell
-docker buildx build --platform=linux/amd64,linux/arm64 -t ghcr.io/zhuyifeiruichuang/kkfileview-base:5.0.2 --push .
+docker buildx build --platform=linux/amd64,linux/arm64 -t ghcr.io/zhuyifeiruichuang/kkfileview-base:latest --push .
 ```

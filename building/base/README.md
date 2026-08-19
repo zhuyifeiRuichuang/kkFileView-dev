@@ -15,14 +15,14 @@ This directory builds the **base** image (`kkfileview-base`) that bundles the he
 The base image is published to GitHub Container Registry:
 
 ```
-ghcr.io/zhuyifeiruichuang/kkfileview-base:<version>
+ghcr.io/zhuyifeiruichuang/kkfileview-base:latest
 ```
 
-The `<version>` matches the repository version (e.g. `5.0.2`). It is also aliased as `:latest`.
+The base image **does not differentiate by version** — it only carries a single `:latest` tag. This is intentional: the base image contains only the OS runtime (Ubuntu + JRE + LibreOffice + fonts), which is version-independent. The final image (`kkfileview`) carries per-release version tags.
 
 ## Built automatically (recommended)
 
-You normally do **not** build the base image by hand. The `build-base.yml` workflow rebuilds and pushes `ghcr.io/zhuyifeiruichuang/kkfileview-base:latest` **only when files under `building/base/**` change** (path filter), so the expensive LibreOffice layer is not rebuilt on every code change. At release time, `release.yml` reuses that `:latest` and aliases it to `:<version>` via `imagetools create` (a zero-layer re-tag — no rebuild).
+You normally do **not** build the base image by hand. The `build-base.yml` workflow rebuilds and pushes `ghcr.io/zhuyifeiruichuang/kkfileview-base:latest` **only when files under `building/base/**` change** (path filter), so the expensive LibreOffice layer is not rebuilt on every code change. At release time, `release.yml` simply checks that `:latest` exists (and falls back to building it from source if missing) — no version tags are created for the base image.
 
 To force a rebuild manually:
 
@@ -33,10 +33,10 @@ gh workflow run build-base.yml
 
 ## Manual build (local)
 
-> Example tag `5.0.2`. The maintained Dockerfile is cross-platform aware; to build an arm64 image, run the same command on an arm64 machine.
+> The base image uses a single `:latest` tag regardless of version.
 
 ```shell
-docker build --tag ghcr.io/zhuyifeiruichuang/kkfileview-base:5.0.2 .
+docker build --tag ghcr.io/zhuyifeiruichuang/kkfileview-base:latest .
 ```
 
 ## Cross-platform build
@@ -58,5 +58,5 @@ docker run --privileged --rm tonistiigi/binfmt --install all
 Example cross-platform build & push:
 
 ```shell
-docker buildx build --platform=linux/amd64,linux/arm64 -t ghcr.io/zhuyifeiruichuang/kkfileview-base:5.0.2 --push .
+docker buildx build --platform=linux/amd64,linux/arm64 -t ghcr.io/zhuyifeiruichuang/kkfileview-base:latest --push .
 ```

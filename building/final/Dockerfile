@@ -1,20 +1,17 @@
 # 最终镜像：在基础镜像之上叠加 kkFileView 发行包并启动服务
 #
-# 构建时必须传入 --build-arg KK_VERSION=<版本号>，该版本号同时用于
-# 1) 拉取对应的基础镜像 ghcr.io/<owner>/kkfileview-base:<KK_VERSION>
-# 2) 与发版 tag、GitHub Release 保持一致
+# 基础镜像不区分版本，只保留 :latest tag；最终镜像仍区分 :<版本> 与 :latest。
+# 构建时无需传 build-arg，直接 FROM ghcr.io/<owner>/kkfileview-base:latest。
 #
 # 用法示例：
 #   docker buildx build \
 #     --platform linux/amd64,linux/arm64 \
 #     --file building/final/Dockerfile \
-#     --build-arg KK_VERSION=5.0.2 \
 #     --tag ghcr.io/<owner>/kkfileview:5.0.2 \
 #     --tag ghcr.io/<owner>/kkfileview:latest \
 #     --push .
 
-ARG KK_VERSION
-FROM ghcr.io/zhuyifeiruichuang/kkfileview-base:${KK_VERSION}
+FROM ghcr.io/zhuyifeiruichuang/kkfileview-base:latest
 
 # 将 Maven 打包好的发行包（含 bin/*.sh、bin/*.jar、config/）解压到 /opt
 ADD server/target/kkFileView-*.tar.gz /opt/

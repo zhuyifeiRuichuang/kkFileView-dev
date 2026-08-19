@@ -11,12 +11,11 @@ This directory builds the **final** runtime image that actually runs kkFileView.
 
 ## How it works
 
-1. **ARG `KK_VERSION`** — the version number (e.g. `5.0.2`). It selects the matching base image `ghcr.io/zhuyifeiruichuang/kkfileview-base:<KK_VERSION>` and must match the release tag / GitHub Release.
-2. **FROM base** — `ghcr.io/zhuyifeiruichuang/kkfileview-base:${KK_VERSION}` provides OS + JRE 21 + LibreOffice + CJK fonts.
-3. **ADD distribution** — `server/target/kkFileView-*.tar.gz` (produced by `mvn package`) is extracted into `/opt`, yielding `/opt/kkFileView-<version>`.
-4. **Version-independent symlink** — `/opt/kkfileview -> /opt/kkFileView-<version>` so deployment mount paths stay fixed regardless of version.
-5. **HEALTHCHECK** — a native check using `bash /dev/tcp` on port 8012 (the base image has no curl). `start_period` is 120s to tolerate cold start.
-6. **ENTRYPOINT** — starts the jar with `-Dspring.config.location=/opt/kkfileview/config/application.properties` so the externally mounted config file is always used.
+1. **FROM base** — `ghcr.io/zhuyifeiruichuang/kkfileview-base:latest` provides OS + JRE 21 + LibreOffice + CJK fonts. The base image does not differentiate by version — it always uses `:latest`.
+2. **ADD distribution** — `server/target/kkFileView-*.tar.gz` (produced by `mvn package`) is extracted into `/opt`, yielding `/opt/kkFileView-<version>`.
+3. **Version-independent symlink** — `/opt/kkfileview -> /opt/kkFileView-<version>` so deployment mount paths stay fixed regardless of version.
+4. **HEALTHCHECK** — a native check using `bash /dev/tcp` on port 8012 (the base image has no curl). `start_period` is 120s to tolerate cold start.
+5. **ENTRYPOINT** — starts the jar with `-Dspring.config.location=/opt/kkfileview/config/application.properties` so the externally mounted config file is always used.
 
 ## Build
 
@@ -24,11 +23,12 @@ This directory builds the **final** runtime image that actually runs kkFileView.
 docker buildx build \
   --platform linux/amd64,linux/arm64 \
   --file building/final/Dockerfile \
-  --build-arg KK_VERSION=5.0.2 \
   --tag ghcr.io/zhuyifeiruichuang/kkfileview:5.0.2 \
   --tag ghcr.io/zhuyifeiruichuang/kkfileview:latest \
   --push .
 ```
+
+> The final image's `Dockerfile` does **not** require a `--build-arg` for the base image — it always pulls `kkfileview-base:latest`. The version tag (e.g. `5.0.2`) is only applied to the final image, not the base.
 
 > Normally you do **not** build this by hand: the `release.yml` workflow builds and pushes it automatically after `mvn package`.
 
