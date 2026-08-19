@@ -32,17 +32,20 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ghcr
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # 构建并推送基础镜像 :latest。
+      # 缓存策略：使用 inline cache（内嵌在 :latest 镜像中），不再额外发布 :cache tag。
+      # 这样 GHCR 里只出现 :latest 一个 tag，避免污染。
       - name: Build and push base image :latest (amd64 + arm64)
         run: |
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --file building/base/Dockerfile \
             --tag "${BASE_IMAGE}:latest" \
-            --cache-from type=registry,ref="${BASE_IMAGE}:cache" \
-            --cache-to type=registry,ref="${BASE_IMAGE}:cache",mode=max \
+            --cache-from type=registry,ref="${BASE_IMAGE}:latest" \
+            --cache-to type=inline \
             --push \
             building/base

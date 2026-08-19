@@ -8,6 +8,8 @@ name: Release
 #   4) 多架构构建并推送最终镜像 :<版本> 与 :latest（FROM 基础镜像 + ADD jar 发行包）
 #   5) 冒烟测试刚发布的真实镜像（docker run 真实镜像，健康检查 / 200 + 启动日志标志），跑完即销毁
 #   6) 创建 GitHub Release，上传 tar.gz 与 jar 两类制品
+#
+# 缓存策略：inline cache，不发布额外的 :cache tag。
 on:
   push:
     tags:
@@ -33,7 +35,7 @@ jobs:
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
-          registry: ghcr.io
+          registry: ghcr
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -55,13 +57,17 @@ jobs:
         run: mvn -B package -Dmaven.test.skip=true --file pom.xml
 
       # 步骤 3：确保基础镜像 :<版本> 存在。
-      # 复用优先：若 build-base.yml 已把 :latest 推上 GHCR，则 imagetools 零层重打为 :<版本>（不重复构建 LibreOffice）；
-      # 否则回退为从源码构建并打 :<版本> 与 :latest。
+      # 复用优先：若 build-base.yml 已把 :latest 推上 GHCR，则 imagetools 把 :latest 同时别名为 :<版本> 和 :latest
+      #（不重复构建 LibreOffice，且保证二者在 GHCR 里显示为同一个镜像）。
+      # 若 :latest 缺失则回退为从源码构建，并打 :<版本> 与 :latest。
       - name: Ensure base image :${VERSION} exists
         run: |
           set -euo pipefail
-          if docker buildx imagetools create --tag "${BASE_IMAGE}:${VERSION}" "${BASE_IMAGE}:latest" 2>/dev/null; then
-            echo "OK reuse :latest as :${VERSION} (no rebuild)"
+          if docker buildx imagetools create \
+               --tag "${BASE_IMAGE}:${VERSION}" \
+               --tag "${BASE_IMAGE}:latest" \
+               "${BASE_IMAGE}:latest" 2>/dev/null; then
+            echo "OK reuse :latest as :${VERSION} and refresh :latest alias (no rebuild)"
           else
             echo "WARN :latest missing, building base from source"
             docker buildx build \
@@ -69,8 +75,8 @@ jobs:
               --file building/base/Dockerfile \
               --tag "${BASE_IMAGE}:${VERSION}" \
               --tag "${BASE_IMAGE}:latest" \
-              --cache-from type=registry,ref="${BASE_IMAGE}:cache" \
-              --cache-to type=registry,ref="${BASE_IMAGE}:cache",mode=max \
+              --cache-from type=registry,ref="${BASE_IMAGE}:latest" \
+              --cache-to type=inline \
               --push \
               building/base
           fi
@@ -84,8 +90,8 @@ jobs:
             --build-arg KK_VERSION="${VERSION}" \
             --tag "${FINAL_IMAGE}:${VERSION}" \
             --tag "${FINAL_IMAGE}:latest" \
-            --cache-from type=registry,ref="${FINAL_IMAGE}:cache" \
-            --cache-to type=registry,ref="${FINAL_IMAGE}:cache",mode=max \
+            --cache-from type=registry,ref="${FINAL_IMAGE}:latest" \
+            --cache-to type=inline \
             --push \
             .
 
