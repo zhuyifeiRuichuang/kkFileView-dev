@@ -1,12 +1,12 @@
 name: Release
 
-# 推送 semver tag（如 v5.0.2）时触发全量发布：
+# 推送 semver tag（如 v5.0.2）时触发全量发布。严格线性流程：
 #   1) 解析版本号（去掉前缀 v）
-#   2) 确保基础镜像 :<版本> 存在（优先用 imagetools 把 :latest 别名复用，避免重复构建；
+#   2) Maven 打包，产出 tar.gz 发行包 + 独立可运行 jar（先得 jar）
+#   3) 确保基础镜像 :<版本> 存在（优先用 imagetools 把 :latest 别名复用，避免重复构建；
 #      若 :latest 尚不存在则回退为从源码构建并打 :<版本> 与 :latest）
-#   3) Maven 打包，产出 tar.gz 发行包 + 独立可运行 jar
-#   4) 多架构构建并推送最终镜像 :<版本> 与 :latest
-#   5) 冒烟测试刚发布的真实镜像（仅健康检查 / 200 + 启动日志标志），跑完即销毁
+#   4) 多架构构建并推送最终镜像 :<版本> 与 :latest（FROM 基础镜像 + ADD jar 发行包）
+#   5) 冒烟测试刚发布的真实镜像（docker run 真实镜像，健康检查 / 200 + 启动日志标志），跑完即销毁
 #   6) 创建 GitHub Release，上传 tar.gz 与 jar 两类制品
 on:
   push:
@@ -43,7 +43,20 @@ jobs:
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 避免重复构建：优先把已有的 :latest 基础镜像直接别名成 :<版本>（多架构 manifest 复用，零层重推）
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      # 步骤 2：先打包代码，得到 jar / tar.gz 发行包（最终镜像会 ADD 该发行包）
+      - name: Build with Maven (package)
+        run: mvn -B package -Dmaven.test.skip=true --file pom.xml
+
+      # 步骤 3：确保基础镜像 :<版本> 存在。
+      # 复用优先：若 build-base.yml 已把 :latest 推上 GHCR，则 imagetools 零层重打为 :<版本>（不重复构建 LibreOffice）；
+      # 否则回退为从源码构建并打 :<版本> 与 :latest。
       - name: Ensure base image :${VERSION} exists
         run: |
           set -euo pipefail
@@ -62,16 +75,7 @@ jobs:
               building/base
           fi
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-          cache: 'maven'
-
-      - name: Build with Maven (package)
-        run: mvn -B package -Dmaven.test.skip=true --file pom.xml
-
+      # 步骤 4：构建最终镜像（FROM 版本化基础镜像 + ADD 上一步的 jar 发行包），多架构推送
       - name: Build and push final image (amd64 + arm64)
         run: |
           docker buildx build \
@@ -85,9 +89,9 @@ jobs:
             --push \
             .
 
-      # 冒烟测试：拉取刚发布的真实镜像并运行，验证服务可正常启动并响应
-      # 仅做健康检查（/ 返回 200 + 启动日志标志），轻量稳定；跑完即销毁
-      # 位于「推送镜像」之后、「创建 Release」之前：镜像不健康则流程失败，不会产出绿色 Release
+      # 步骤 5：部署测试 —— 拉取刚发布的真实最终镜像并运行，验证服务可正常启动并响应。
+      # 仅做健康检查（/ 返回 200 + 启动日志标志），轻量稳定；跑完即销毁。
+      # 位于「推送镜像」之后、「创建 Release」之前：镜像不健康则流程失败，不会产出绿色 Release。
       - name: Smoke test published image
         run: |
           set -euo pipefail
@@ -116,6 +120,7 @@ jobs:
             echo "WARN: 'Started' flag not found in logs (service responded 200, treating as OK)"
           fi
 
+      # 步骤 6：创建 GitHub Release，上传 tar.gz 与 jar 两类制品
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
