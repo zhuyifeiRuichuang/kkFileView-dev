@@ -1,50 +1,62 @@
-# 构建说明
+# kkFileView 基础镜像
 
-由于 kkfileview 的基础运行环境很少变动且制作耗时较久，而 kkfileview 本身代码开发会频繁改动，因此把制作其 Docker 镜像的步骤拆分为两次：
+本目录构建 **基础镜像**（`kkfileview-base`），它打包了体积大、很少变动的运行环境：Ubuntu 24.04、OpenJDK 21（JRE）、LibreOffice（无 GUI 版）以及中文字体。只构建一次并在各次发版间复用，可大幅加速最终镜像构建，避免在每次应用代码变更时都重编译 LibreOffice。
 
-首先制作 kkfileview 的基础镜像（kkfileview-base）。
+## 文件说明
 
-然后使用 kkfileview-base 作为基础镜像进行构建，加快 kkfileview docker 镜像构建与发布。
+| 文件 | 作用 |
+|------|------|
+| `Dockerfile` | 安装 OS + JRE 21 + LibreOffice + 中文字体，**不含**任何应用代码。 |
+| `fonts/.gitkeep` | 让（原本为空的）fonts 目录纳入版本控制。 |
+| `README.md` / `README.cn.md` | 本文档（英文 / 中文）。 |
 
-执行如下命令即可构建基础镜像：
-> 这里镜像 tag 以 5.0.0 为例，本项目所维护的 Dockerfile 文件考虑了跨平台兼容性。 如果你需要用到 arm64 架构镜像, 则在arm64 架构机器上同样执行下面的构建命令即可
+## 镜像仓库与 tag
 
-```shell
-docker build --tag keking/kkfileview-base:5.0.0 .
+基础镜像发布到 GitHub Container Registry：
+
+```
+ghcr.io/zhuyifeiruichuang/kkfileview-base:<版本号>
 ```
 
+`<版本号>` 与代码仓库版本一致（如 `5.0.2`），同时别名为 `:latest`。
 
+## 自动构建（推荐）
+
+通常你无需手动构建基础镜像。`build-base.yml` 工作流**仅在 `building/base/**` 下的文件变更时**才会重建并推送 `ghcr.io/zhuyifeiruichuang/kkfileview-base:latest`（路径过滤），因此昂贵的 LibreOffice 层不会在每次代码变更时重构建。发版时，`release.yml` 直接复用该 `:latest`，并通过 `imagetools create` 将其别名为 `:<版本号>`（零层重打 tag，不重新构建）。
+
+如需手动强制重建：
+
+```shell
+gh workflow run build-base.yml
+# 或者直接向 building/base/** 推送任意改动
+```
+
+## 本地手动构建
+
+> 以 tag `5.0.2` 为例。本项目维护的 Dockerfile 已考虑跨平台；若要构建 arm64 镜像，在 arm64 机器上执行同样的命令即可。
+
+```shell
+docker build --tag ghcr.io/zhuyifeiruichuang/kkfileview-base:5.0.2 .
+```
 
 ## 跨平台构建
 
-`docker buildx` 支持在一台机器上构建出多种平台架构的镜像。推荐使用该能力进行跨平台的镜像构建。
-例如，执行 `docker buildx build` 命令时加上 `--platform=linux/arm64` 参数即可构建出 arm64 架构镜像。这极大方便了那些没有arm64 架构机器却想构建 arm64 架构镜像的用户。
+`docker buildx` 支持在一台机器上构建多种架构镜像。例如，执行 `docker buildx build` 时加上 `--platform=linux/arm64` 即可构建 arm64 镜像——对没有 arm64 硬件却需要 arm64 镜像的用户非常方便。
 
-> 当前本项目仅支持构建 linux/amd64 和 linux/arm64 两种平台架构的镜像
-> buildx 的 builder driver 可以使用默认的 `docker` 类型, 若使用 `docker-container` 类型可以支持并行构建多种架构, 本文不再赘述, 有兴趣可以自行了解。参考 [Docker Buildx | Docker Documentation](https://docs.docker.com/buildx/working-with-buildx/#build-multi-platform-images)
+> 当前本项目仅支持构建 `linux/amd64` 与 `linux/arm64` 两种架构。
+> buildx 的 builder driver 可以使用默认的 `docker` 类型，若使用 `docker-container` 类型可并行构建多种架构（此处不展开）。参考 [Docker Buildx](https://docs.docker.com/buildx/working-with-buildx/#build-multi-platform-images)。
 
-**前提要求**
+**前提要求**（以 amd64 主机为例）：需开启 docker 的 buildx 特性与 Linux QEMU 用户模式。使用 WSL2 且安装了较新 Docker Desktop 的 Windows 用户已满足这些前提。
 
-以当前机器为 amd64 (x86_64)架构为例。需要开启 docker 的 buildx 特性，以及开启 Linux 的 QEMU 用户模式：
-
-> 使用 WSL2 的 Windows 用户如果安装了最新的 DockerDesktop, 则这些前提要求已满足, 无需额外下述设置。 
-
-1. 安装 docker buildx 客户端插件：
-   > docker 版本要求 >=19.03
-   
-   若已安装, 则跳过。详情参考 https://github.com/docker/buildx
-
-2. 开启 QEMU 的用户模式功能, 并安装其它平台的模拟器:
-   > Linux 内核要求 >=4.8
-
-   使用 `tonistiigi/binfmt` 镜像可快速开启并安装模拟器，执行下面命令:
-
-   ```shell
-   docker run --privileged --rm tonistiigi/binfmt --install all
-   ```
-
-现在就可以愉快地开始构建了，构建命令示例:
+1. 安装 docker buildx 客户端插件（Docker >= 19.03）。若已安装可跳过。参考 https://github.com/docker/buildx。
+2. 开启 QEMU 用户模式并安装其他平台模拟器（Linux 内核 >= 4.8）：
 
 ```shell
-docker buildx build --platform=linux/amd64,linux/arm64 -t keking/kkfileview-base:5.0.0 --push .
+docker run --privileged --rm tonistiigi/binfmt --install all
+```
+
+跨平台构建并推送示例：
+
+```shell
+docker buildx build --platform=linux/amd64,linux/arm64 -t ghcr.io/zhuyifeiruichuang/kkfileview-base:5.0.2 --push .
 ```

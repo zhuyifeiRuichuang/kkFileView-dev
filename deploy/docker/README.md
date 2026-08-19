@@ -1,31 +1,39 @@
-# kkFileView Docker 单机部署
+# kkFileView Docker Standalone Deployment
 
-本目录提供 Docker Compose 部署方式，配置文件通过卷挂载实现灵活配置。
+This directory provides a Docker Compose deployment. Runtime configuration is mounted via a volume for flexible overrides.
 
-## 使用
+## Files
+
+| File | Purpose |
+|------|---------|
+| `docker-compose.yml` | Service definition. Pulls `ghcr.io/zhuyifeiruichuang/kkfileview:latest` and mounts the config file read-only. |
+| `application.properties` | Runtime configuration (a copy of the server default). Edit this to customize. |
+| `README.md` / `README.cn.md` | This documentation (English / Chinese). |
+
+## Usage
 
 ```bash
-# 1) 按需修改同目录 application.properties
-# 2) 启动
+# 1) Edit application.properties in this directory as needed
+# 2) Start
 docker compose up -d
-# 3) 访问
+# 3) Access
 open http://localhost:8012
 ```
 
-## 说明
+## Configuration (flexible)
 
-- 镜像：`ghcr.io/zhuyifeiruichuang/kkfileview:latest`（tag 与代码仓库版本号一致，可锁定为 `:5.0.2`）。
-- 配置挂载到容器内固定路径 `/opt/kkfileview/config/application.properties`，该路径与镜像版本无关（镜像内已建软链），升级版本无需改动本目录。
-- 配置文件中大量项支持 `${KK_*}` 环境变量覆盖，也可在 `docker-compose.yml` 的 `environment` 中注入。
-- 默认端口 `8012`，如需修改请同步改 `ports` 映射与 `application.properties` 的 `server.port`。
+- **Image**: `ghcr.io/zhuyifeiruichuang/kkfileview:latest`. The tag follows the repository version; pin it to `:5.0.2` for reproducibility.
+- **Config mount**: mounted at the fixed in-container path `/opt/kkfileview/config/application.properties`. This path is version-independent (the image uses a symlink), so upgrading the image version does **not** require changing this directory.
+- **Env overrides**: many options support `${KK_*}` environment-variable overrides; you can also inject them via the `environment:` block in `docker-compose.yml`.
+- **Port**: defaults to `8012`. To change it, update both the `ports` mapping and `server.port` in `application.properties`.
 
-## 健康检查
+## Health check
 
-容器内置原生 `HEALTHCHECK`（基于镜像内 bash 对 8012 端口做 TCP 连通性检查，校验服务监听已就绪），`docker ps` 可看到 `healthy` 状态；Docker Compose 亦通过 `healthcheck` 字段复用该机制。`start_period` 设为 120s 以容忍 JVM + LibreOffice 冷启动。
+The image ships a native `HEALTHCHECK` (a `bash /dev/tcp` TCP connectivity check on port 8012, because the base image has no curl). Docker Compose reuses it via the `healthcheck` block. `start_period` is 120s to tolerate JVM + LibreOffice cold start.
 
 ```bash
-docker ps                              # STATUS 列显示 healthy / starting
+docker ps                                                   # STATUS shows healthy / starting
 docker inspect -f '{{.State.Health.Status}}' kkfileview
 ```
 
-> 说明：基础镜像（ubuntu:24.04）未安装 curl/wget，故使用 bash /dev/tcp 实现，零额外依赖。应用级的 HTTP 200 校验由 CI 冒烟测试（curl）与 k8s 的 httpGet 探针负责。
+> The base image (ubuntu:24.04) has no curl/wget, hence `bash /dev/tcp` is used (zero extra dependencies). Application-level HTTP 200 validation is covered by the CI smoke test and the k8s `httpGet` probes.

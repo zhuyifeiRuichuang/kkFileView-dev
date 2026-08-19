@@ -1,53 +1,62 @@
-# Build Instructions
+# kkFileView Base Image
 
-Since the base runtime environment for kkfileview rarely changes and takes a long time to build, while the kkfileview code itself is frequently updated, the process of building its Docker image is split into two steps:
+This directory builds the **base** image (`kkfileview-base`) that bundles the heavy, rarely-changing runtime environment: Ubuntu 24.04, OpenJDK 21 (JRE), LibreOffice (no-GUI), and CJK fonts. Building it once and reusing it across releases drastically speeds up the final image build and avoids rebuilding LibreOffice every time the application code changes.
 
-First, create the base image for kkfileview (kkfileview-base).
+## Files
 
-Then, use kkfileview-base as the base image to build and speed up the kkfileview Docker image build and release process.
+| File | Purpose |
+|------|---------|
+| `Dockerfile` | Installs OS + JRE 21 + LibreOffice + CJK fonts. Contains **no** application code. |
+| `fonts/.gitkeep` | Keeps the (otherwise empty) fonts directory under version control. |
+| `README.md` / `README.cn.md` | This documentation (English / Chinese). |
 
-To build the base image, run the following command:
+## Image registry & tag
 
-> In this example, the image tag is 5.0.0. The Dockerfile maintained in this project considers cross-platform compatibility. If you need an arm64 architecture image, run the same build command on an arm64 architecture machine.
+The base image is published to GitHub Container Registry:
 
-```shell
-docker build --tag keking/kkfileview-base:5.0.0 .
+```
+ghcr.io/zhuyifeiruichuang/kkfileview-base:<version>
 ```
 
+The `<version>` matches the repository version (e.g. `5.0.2`). It is also aliased as `:latest`.
 
+## Built automatically (recommended)
 
-## Cross-Platform Build
+You normally do **not** build the base image by hand. The `build-base.yml` workflow rebuilds and pushes `ghcr.io/zhuyifeiruichuang/kkfileview-base:latest` **only when files under `building/base/**` change** (path filter), so the expensive LibreOffice layer is not rebuilt on every code change. At release time, `release.yml` reuses that `:latest` and aliases it to `:<version>` via `imagetools create` (a zero-layer re-tag — no rebuild).
 
-`docker buildx` supports building images for multiple platform architectures on a single machine. It is recommended to use this capability for cross-platform image builds.
-For example, adding the `--platform=linux/arm64` parameter when executing the `docker buildx build` command will allow you to build an arm64 architecture image. This is particularly convenient for users who want to build arm64 images but don't have an arm64 machine.
-
-> Currently, this project only supports building images for the linux/amd64 and linux/arm64 architectures.
-> The buildx builder driver can use the default `docker` type, but if you use the `docker-container` type, you can build multiple architectures in parallel. This README will not cover that in detail, you can learn more on your own. Refer to [Docker Buildx | Docker Documentation](https://docs.docker.com/buildx/working-with-buildx/#build-multi-platform-images)
-
-**Prerequisites**
-
-Assuming the current machine is amd64 (x86_64) architecture, you'll need to enable the docker buildx feature and enable Linux QEMU user mode:
-
-> Windows users with WSL2 who have installed a recent version of Docker Desktop will already meet these prerequisites, so no additional setup is required.
-
-1. Install the docker buildx client plugin:
-
-   > Docker version >=19.03 is required.
-
-   If it's already installed, you can skip this step. For more details, refer to https://github.com/docker/buildx.
-
-2. Enable QEMU user mode and install emulators for other platforms:
-
-   > Linux kernel version >=4.8 is required.
-
-   You can quickly enable and install emulators using the tonistiigi/binfmt image by running the following command:
-
-   ```shell
-   docker run --privileged --rm tonistiigi/binfmt --install all
-   ```
-
-Now you can enjoy the building. Here’s an example build command:
+To force a rebuild manually:
 
 ```shell
-docker buildx build --platform=linux/amd64,linux/arm64 -t keking/kkfileview-base:5.0.0 --push .
+gh workflow run build-base.yml
+# or simply push any change under building/base/**
+```
+
+## Manual build (local)
+
+> Example tag `5.0.2`. The maintained Dockerfile is cross-platform aware; to build an arm64 image, run the same command on an arm64 machine.
+
+```shell
+docker build --tag ghcr.io/zhuyifeiruichuang/kkfileview-base:5.0.2 .
+```
+
+## Cross-platform build
+
+`docker buildx` can build multiple architectures on a single machine. For example, add `--platform=linux/arm64` to build an arm64 image — convenient when you lack arm64 hardware.
+
+> This project supports `linux/amd64` and `linux/arm64` only.
+> The buildx builder driver can be the default `docker` type, or `docker-container` to build architectures in parallel (not covered here). See [Docker Buildx](https://docs.docker.com/buildx/working-with-buildx/#build-multi-platform-images).
+
+**Prerequisites** (amd64 host example): enable buildx and Linux QEMU user-mode. WSL2 + recent Docker Desktop on Windows already satisfies these.
+
+1. Install the buildx plugin (Docker >= 19.03). Skip if present. See https://github.com/docker/buildx.
+2. Enable QEMU user-mode and install emulators (Linux kernel >= 4.8):
+
+```shell
+docker run --privileged --rm tonistiigi/binfmt --install all
+```
+
+Example cross-platform build & push:
+
+```shell
+docker buildx build --platform=linux/amd64,linux/arm64 -t ghcr.io/zhuyifeiruichuang/kkfileview-base:5.0.2 --push .
 ```

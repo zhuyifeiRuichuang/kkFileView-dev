@@ -1,39 +1,41 @@
-# kkFileView Kubernetes 部署
+# kkFileView Kubernetes Deployment
 
-本目录提供 kkFileView 在 K8s 环境的一键部署清单，**无状态**（不挂载持久卷，缓存写入容器可写层）。
+This directory provides a one-command Kubernetes deployment for kkFileView. It is **stateless** (no persistent volume; the cache is written to the container's writable layer).
 
-## 资源说明
+## Files
 
-| 文件 | 作用 |
-|------|------|
-| `namespace.yaml` | 创建独立命名空间 `kkfileview` |
-| `configmap.yaml` | 配置 `application.properties`（已内嵌默认配置），以文件形式挂载实现灵活配置 |
-| `deployment.yaml` | 无状态 Deployment，挂载 ConfigMap 覆盖配置；挂载点固定为 `/opt/kkfileview/config/application.properties`（与镜像版本无关） |
-| `service-clusterip.yaml` | 集群内部访问（ClusterIP） |
-| `service-nodeport.yaml` | 通过节点端口暴露（NodePort，固定 30812） |
-| `kustomization.yaml` | 聚合上述资源，可用 `kubectl apply -k` 一键部署 |
+| File | Purpose |
+|------|---------|
+| `namespace.yaml` | Creates the dedicated namespace `kkfileview`. |
+| `configmap.yaml` | Embeds `application.properties` (default config) and mounts it as a file for flexible configuration. |
+| `deployment.yaml` | Stateless Deployment. Mounts the ConfigMap to override config at the fixed path `/opt/kkfileview/config/application.properties` (version-independent). Also defines startup/readiness/liveness probes. |
+| `service-clusterip.yaml` | In-cluster access (ClusterIP). |
+| `service-nodeport.yaml` | Node-port exposure (NodePort, fixed `30812`). |
+| `kustomization.yaml` | Aggregates the above; use `kubectl apply -k` for one-shot deployment. |
+| `application.properties` | A copy of the config (kept in sync with `configmap.yaml`; the ConfigMap is the source of truth at runtime). |
+| `README.md` / `README.cn.md` | This documentation (English / Chinese). |
 
-## 调整配置（灵活配置）
+## Adjust configuration (flexible)
 
-配置全部在 `configmap.yaml` 的 `data.application.properties` 中。修改后重新应用即可生效：
+All configuration lives in `configmap.yaml`'s `data.application.properties`. After editing, re-apply and restart:
 
 ```bash
-# 编辑 configmap.yaml 中的 application.properties 内容，然后：
+# edit configmap.yaml's application.properties content, then:
 kubectl apply -f configmap.yaml
 kubectl rollout restart deployment/kkfileview -n kkfileview
 ```
 
-> 提示：配置文件中大量项支持 `${KK_*}` 环境变量覆盖，也可在 `deployment.yaml` 的 `env` 中注入，无需改动 ConfigMap。
+> Many options also support `${KK_*}` environment-variable overrides — inject them via the `env` block in `deployment.yaml` without touching the ConfigMap.
 
-## 部署
+## Deploy
 
-方式一（kustomize，推荐）：
+Option 1 (kustomize, recommended):
 
 ```bash
 kubectl apply -k deploy/k8s/
 ```
 
-方式二（逐个文件）：
+Option 2 (file by file):
 
 ```bash
 kubectl apply -f namespace.yaml
@@ -43,25 +45,25 @@ kubectl apply -f service-clusterip.yaml
 kubectl apply -f service-nodeport.yaml
 ```
 
-## 镜像版本
+## Image version
 
-`deployment.yaml` 默认使用 `ghcr.io/zhuyifeiruichuang/kkfileview:latest`。锁定版本请在 `kustomization.yaml` 的 `images` 段覆写 `newTag`，或直接改 `deployment.yaml` 的 `image`。镜像 tag 与代码仓库版本号一致（如 `5.0.2`）。
+`deployment.yaml` defaults to `ghcr.io/zhuyifeiruichuang/kkfileview:latest`. To pin a version, override `newTag` in `kustomization.yaml`'s `images` section, or edit `deployment.yaml`'s `image` directly. The image tag matches the repository version (e.g. `5.0.2`).
 
-## 访问
+## Access
 
-- 集群内部：`http://kkfileview-clusterip.kkfileview.svc:8012`
-- 节点端口：`http://<任意节点IP>:30812`
-- 如需 Ingress / 域名，请按需自行补充 Ingress 资源。
+- In-cluster: `http://kkfileview-clusterip.kkfileview.svc:8012`
+- Node port: `http://<any-node-IP>:30812`
+- Add your own Ingress/domain as needed.
 
-## 健康检查
+## Health checks
 
-Deployment 配置了三类探针（`httpGet` 由 kubelet 在节点侧发起，**不依赖容器内是否安装 curl 等工具**）：
+The Deployment defines three probes (`httpGet` is issued by the kubelet on the node side, so it does **not** depend on curl being installed in the container):
 
-- `startupProbe`：最长 180s 宽限期（periodSeconds 10 × failureThreshold 18），避免 JVM + LibreOffice 冷启动期间被 liveness 误杀。
-- `readinessProbe`：就绪后（HTTP 200）才纳入 Service 流量。
-- `livenessProbe`：持续异常（HTTP 失败）时重启容器。
+- `startupProbe`: up to 180s grace (periodSeconds 10 × failureThreshold 18) to avoid liveness killing the pod during slow JVM + LibreOffice startup.
+- `readinessProbe`: once healthy (HTTP 200), the pod receives Service traffic.
+- `livenessProbe`: restarts the container on sustained failure (HTTP error).
 
 ```bash
 kubectl get pods -n kkfileview
-kubectl describe pod -n kkfileview <pod>   # 查看探针事件与失败原因
+kubectl describe pod -n kkfileview <pod>   # inspect probe events / failure reasons
 ```
