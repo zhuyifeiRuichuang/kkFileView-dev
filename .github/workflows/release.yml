@@ -141,3 +141,13 @@ jobs:
           skip_if_release_exists: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # 步骤 7：发布完成后，自动调用 Deploy Test 工作流验证真实部署文件可用性。
+  # 通过 workflow_call 复用 deploy-test.yml；只要 release（含镜像推送）成功，即自动测试。
+  deploy-test:
+    name: Deploy Test (triggered by release)
+    needs: release
+    uses: ./.github/workflows/deploy-test.yml
+    permissions:
+      contents: read
+      packages: read   # 拉取 GHCR 上的镜像

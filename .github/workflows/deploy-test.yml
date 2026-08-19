@@ -1,23 +1,26 @@
 name: Deploy Test
 
-# 在 GHCR 容器镜像「kkfileview:latest」发生更新（registry_package: published）后，
-# 自动用 deploy/ 下的真实部署文件在 GitHub 免费 runner 里把服务跑起来并验证可访问；
-# 同时也支持手动触发（workflow_dispatch）。
-# 两个环境（Docker Compose / Kubernetes-kind）并行验证，覆盖 deploy/docker 与
-# deploy/k8s 两套清单。镜像统一拉取已发布的 ghcr.io/zhuyifeiruichuang/kkfileview:latest。
+# 用 deploy/ 下的真实部署文件在 GitHub 免费 runner 里把服务跑起来并验证可访问。
+# 覆盖两个环境（Docker Compose / Kubernetes-kind），对应 deploy/docker 与 deploy/k8s
+# 两套清单。镜像统一拉取已发布的 ghcr.io/zhuyifeiruichuang/kkfileview:latest。
 #
-# 触发逻辑：release / workflow_run 都不可靠，而容器镜像真正推送到 GHCR 时会发出
-# registry_package: published 事件，这是最直接、最符合「镜像更新就测试」语义的事件。
-# 仅对 package name == 'kkfileview' 且 tag == 'latest' 的发布事件响应，避免基础镜像
-#（kkfileview-base）更新或历史版本 tag 重复触发。
+# 三种触发方式：
+#   1) Release 流程末尾直接调用（workflow_call，方案 B）：每次成功发版、镜像推送后自动测试；
+#   2) 手动触发（workflow_dispatch）：在 Actions 页面 Run workflow；
+#   3) GHCR 镜像包发布事件（registry_package: published）：仅对 package name == 'kkfileview'
+#      且 tag == 'latest' 响应，避免基础镜像（kkfileview-base）更新或历史版本 tag 重复触发。
+# 说明：registry_package 由 GITHUB_TOKEN 推送的镜像不会触发（GitHub 防循环机制），
+# 故主路径为 (1)；若改用 PAT 推送镜像，(3) 也会生效。
 on:
   registry_package:
     types: [published]
   workflow_dispatch:
+  workflow_call:
 
-# 多架构镜像推送时 GitHub 可能为每个 manifest 各发一次事件，用并发组避免重叠运行。
+# 并发组加 github.job，确保 docker / k8s 两个 job 互不取消；registry_package 触发时
+# 用 package_version.id 去重，避免多架构推送的多次事件重叠运行。
 concurrency:
-  group: deploy-test-${{ github.event_name }}-${{ github.event.registry_package.package_version.id || github.run_id }}
+  group: deploy-test-${{ github.job }}-${{ github.event.registry_package.package_version.id || github.run_id }}
   cancel-in-progress: true
 
 permissions:
@@ -26,7 +29,7 @@ permissions:
 
 jobs:
   docker-deploy-test:
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.registry_package.name == 'kkfileview' && github.event.registry_package.package_version.container_metadata.tag.name == 'latest') }}
+    if: ${{ github.event_name != 'registry_package' || (github.event.registry_package.name == 'kkfileview' && github.event.registry_package.package_version.container_metadata.tag.name == 'latest') }}
     runs-on: ubuntu-22.04
     defaults:
       run:
@@ -84,7 +87,7 @@ jobs:
         run: docker compose down -v
 
   k8s-deploy-test:
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.registry_package.name == 'kkfileview' && github.event.registry_package.package_version.container_metadata.tag.name == 'latest') }}
+    if: ${{ github.event_name != 'registry_package' || (github.event.registry_package.name == 'kkfileview' && github.event.registry_package.package_version.container_metadata.tag.name == 'latest') }}
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
