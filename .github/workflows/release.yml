@@ -136,5 +136,6 @@ jobs:
             server/target/kkFileView-*.tar.gz
             server/target/kkFileView-*.jar
           generate_release_notes: true
+          skip_if_release_exists: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
