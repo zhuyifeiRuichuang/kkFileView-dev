@@ -6,7 +6,7 @@ This directory builds the **base** image (`kkfileview-base`) that bundles the he
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile` | Installs OS + JRE 21 + LibreOffice + CJK fonts, creates the non-root runtime user `kk` (uid/gid 10001). Contains **no** application code. |
+| `Dockerfile` | Installs OS + JRE 21 + LibreOffice + CJK fonts. Contains **no** application code. |
 | `fonts/.gitkeep` | Keeps the (otherwise empty) fonts directory under version control. |
 | `README.md` / `README.cn.md` | This documentation (English / Chinese). |
 
@@ -39,7 +39,6 @@ gh workflow run build-base.yml
 
 ## Runtime notes
 
-- **Non-root user** — the image creates `kk` (uid/gid `10001`) so the final image can drop privileges via `USER kk`.
 - **No mirror swap** — the Dockerfile does not replace `archive.ubuntu.com` with a mirror: GitHub Actions runners are hosted overseas where the default source is fastest.
 - **Fonts** — `ttf-mscorefonts-installer` (a flaky SourceForge download) is replaced with Ubuntu repo fonts that are metrically compatible: `fonts-liberation` (≈ Arial/Times/Courier), `fonts-crosextra-carlito` (≈ Calibri), `fonts-crosextra-caladea` (≈ Cambria), plus `ttf-wqy-*` CJK fonts.
 

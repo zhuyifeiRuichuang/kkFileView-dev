@@ -34,9 +34,6 @@ RUN apt-get update && \
     ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
     localedef -i zh_CN -c -f UTF-8 -A /usr/share/locale/locale.alias zh_CN.UTF-8 && \
     locale-gen zh_CN.UTF-8 && \
-    # 非 root 运行：创建固定 uid/gid 10001 的应用用户 kk（供最终镜像 USER 使用）
-    groupadd -g 10001 kk && \
-    useradd -u 10001 -g 10001 -m -d /home/kk -s /bin/bash kk && \
     apt-get autoremove -y && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*

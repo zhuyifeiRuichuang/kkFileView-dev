@@ -14,9 +14,8 @@
 1. **FROM 基础镜像** —— `ghcr.io/zhuyifeiruichuang/kkfileview-base:latest` 提供 OS + JRE 21 + LibreOffice + 中文字体。基础镜像不区分版本，始终使用 `:latest`。
 2. **ADD 发行包** —— `server/target/kkFileView-*.tar.gz`（由 `mvn package` 产出）解压到 `/opt`，得到 `/opt/kkFileView-<版本>`。
 3. **版本无关软链** —— `/opt/kkfileview -> /opt/kkFileView-<版本>`，使部署挂载路径与版本无关。
-4. **非 root 运行** —— 发行包目录 chown 给 `kk`（uid/gid 10001，由基础镜像创建），并切换 `USER kk`、`HOME=/home/kk`。应用默认把预览产物写到 `<应用根>/file/`，LibreOffice/JOD 需要可写的用户目录——均已覆盖。k8s 清单通过 `securityContext.runAsUser/runAsGroup/fsGroup: 10001` 与之对齐。
-5. **HEALTHCHECK** —— 使用 `bash /dev/tcp` 对 8012 端口做原生检查（基础镜像无 curl）。`start_period` 为 120s 以容忍冷启动。
-6. **ENTRYPOINT** —— 以 `-Dspring.config.location=/opt/kkfileview/config/application.properties` 启动 jar，始终使用外部挂载的配置文件。
+4. **HEALTHCHECK** —— 使用 `bash /dev/tcp` 对 8012 端口做原生检查（基础镜像无 curl）。`start_period` 为 120s 以容忍冷启动。
+5. **ENTRYPOINT** —— 以 `-Dspring.config.location=/opt/kkfileview/config/application.properties` 启动 jar，始终使用外部挂载的配置文件。
 
 ## 构建
 

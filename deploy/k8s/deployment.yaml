@@ -15,13 +15,6 @@ spec:
       labels:
         app: kkfileview
     spec:
-      # 非 root 运行（与镜像内 kk 用户 uid/gid=10001 一致）：
-      #   runAsUser/runAsGroup 让容器进程以 kk 身份运行；
-      #   fsGroup 使后续挂载的卷（如预览产物 PVC）按组 10001 授权，应用可写。
-      securityContext:
-        runAsUser: 10001
-        runAsGroup: 10001
-        fsGroup: 10001
       containers:
         - name: kkfileview
           image: ghcr.io/zhuyifeiruichuang/kkfileview:latest

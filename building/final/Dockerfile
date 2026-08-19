@@ -2,7 +2,7 @@
 #
 # 基础镜像不区分版本，只保留 :latest tag；最终镜像仍区分 :<版本> 与 :latest。
 # 构建时无需传 build-arg，直接 FROM ghcr.io/<owner>/kkfileview-base:latest。
-# 容器以非 root 用户 kk（uid/gid 10001，由基础镜像创建）运行，降低提权风险。
+# 容器以 root 用户运行（保持 kkFileView 官方镜像行为）。
 #
 # 用法示例：
 #   docker buildx build \
@@ -25,14 +25,6 @@ RUN ln -sfn "$(ls -d /opt/kkFileView-* | head -n1)" /opt/kkfileview
 ENV KKFILEVIEW_BIN_FOLDER=/opt/kkfileview/bin \
     LANG=zh_CN.UTF-8 \
     LC_ALL=zh_CN.UTF-8
-
-# 非 root 运行：把应用目录交给 kk(10001) 用户。
-# 应用默认把预览/转换产物写到 <应用根>/file/（file.dir=default），
-# 故整个发行包目录必须可写；HOME=/home/kk 供 LibreOffice/JODConverter
-# 写入用户配置、字体缓存等（基础镜像 useradd -m 已创建 /home/kk）。
-RUN chown -R kk:kk /opt/kkFileView-*
-USER kk
-ENV HOME=/home/kk
 
 EXPOSE 8012
 

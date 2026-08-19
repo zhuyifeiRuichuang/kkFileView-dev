@@ -6,7 +6,7 @@
 
 | 文件 | 作用 |
 |------|------|
-| `Dockerfile` | 安装 OS + JRE 21 + LibreOffice + 中文字体，并创建非 root 运行用户 `kk`（uid/gid 10001），**不含**任何应用代码。 |
+| `Dockerfile` | 安装 OS + JRE 21 + LibreOffice + 中文字体，**不含**任何应用代码。 |
 | `fonts/.gitkeep` | 让（原本为空的）fonts 目录纳入版本控制。 |
 | `README.md` / `README.cn.md` | 本文档（英文 / 中文）。 |
 
@@ -39,7 +39,6 @@ gh workflow run build-base.yml
 
 ## 运行期说明
 
-- **非 root 用户** —— 镜像创建 `kk`（uid/gid `10001`），供最终镜像通过 `USER kk` 降权运行。
 - **不做镜像源替换** —— Dockerfile 不再把 `archive.ubuntu.com` 换成国内镜像：GitHub Actions runner 在海外，默认源更快。
 - **字体** —— 用 Ubuntu 仓库内的度量兼容字体替代 `ttf-mscorefonts-installer`（依赖 SourceForge 下载、经常失败的脆弱点）：`fonts-liberation`（≈ Arial/Times/Courier）、`fonts-crosextra-carlito`（≈ Calibri）、`fonts-crosextra-caladea`（≈ Cambria），外加 `ttf-wqy-*` 中文字体。
 
