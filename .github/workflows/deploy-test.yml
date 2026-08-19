@@ -1,18 +1,24 @@
 name: Deploy Test
 
-# 在「Release」正式发布（released 事件）后，自动用 deploy/ 下的真实部署文件在
-# GitHub 免费 runner 里把服务跑起来并验证可访问；同时也支持手动触发（workflow_dispatch）。
+# 在 GHCR 容器镜像「kkfileview:latest」发生更新（registry_package: published）后，
+# 自动用 deploy/ 下的真实部署文件在 GitHub 免费 runner 里把服务跑起来并验证可访问；
+# 同时也支持手动触发（workflow_dispatch）。
 # 两个环境（Docker Compose / Kubernetes-kind）并行验证，覆盖 deploy/docker 与
 # deploy/k8s 两套清单。镜像统一拉取已发布的 ghcr.io/zhuyifeiruichuang/kkfileview:latest。
 #
-# 触发改用 release: types: [released] 而非 workflow_run：workflow_run 监听「由 tag
-# 触发的 Release」完成后经常不可靠地不触发下游（GitHub 已知行为）；released 事件是
-# 发布成功后才发出的全局事件，不依赖上游 workflow 是否在默认分支运行，可靠性更高，
-# 且天然满足「发版成功才验证」。
+# 触发逻辑：release / workflow_run 都不可靠，而容器镜像真正推送到 GHCR 时会发出
+# registry_package: published 事件，这是最直接、最符合「镜像更新就测试」语义的事件。
+# 仅对 package name == 'kkfileview' 且 tag == 'latest' 的发布事件响应，避免基础镜像
+#（kkfileview-base）更新或历史版本 tag 重复触发。
 on:
-  release:
-    types: [released]
+  registry_package:
+    types: [published]
   workflow_dispatch:
+
+# 多架构镜像推送时 GitHub 可能为每个 manifest 各发一次事件，用并发组避免重叠运行。
+concurrency:
+  group: deploy-test-${{ github.event_name }}-${{ github.event.registry_package.package_version.id || github.run_id }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -20,7 +26,7 @@ permissions:
 
 jobs:
   docker-deploy-test:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'release' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.registry_package.name == 'kkfileview' && github.event.registry_package.package_version.container_metadata.tag.name == 'latest') }}
     runs-on: ubuntu-22.04
     defaults:
       run:
@@ -78,7 +84,7 @@ jobs:
         run: docker compose down -v
 
   k8s-deploy-test:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'release' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.registry_package.name == 'kkfileview' && github.event.registry_package.package_version.container_metadata.tag.name == 'latest') }}
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
