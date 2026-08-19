@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kkfileview
+  namespace: kkfileview
+  labels:
+    app: kkfileview
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kkfileview
+  template:
+    metadata:
+      labels:
+        app: kkfileview
+    spec:
+      containers:
+        - name: kkfileview
+          # 镜像 tag 由代码仓库版本号决定；默认 :latest，可锁定为 :5.0.2 等具体版本
+          image: ghcr.io/zhuyifeiruichuang/kkfileview:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8012
+              name: http
+          # 用 ConfigMap 覆盖容器内的 application.properties，实现灵活配置
+          # 挂载点为版本无关路径 /opt/kkfileview/config/application.properties
+          volumeMounts:
+            - name: config
+              mountPath: /opt/kkfileview/config/application.properties
+              subPath: application.properties
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8012
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8012
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+      volumes:
+        - name: config
+          configMap:
+            name: kkfileview-config
+            items:
+              - key: application.properties
+                path: application.properties

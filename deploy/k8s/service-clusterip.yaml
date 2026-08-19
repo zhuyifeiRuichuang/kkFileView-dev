@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kkfileview-clusterip
+  namespace: kkfileview
+  labels:
+    app: kkfileview
+spec:
+  type: ClusterIP
+  selector:
+    app: kkfileview
+  ports:
+    - name: http
+      port: 8012
+      targetPort: 8012
+      protocol: TCP

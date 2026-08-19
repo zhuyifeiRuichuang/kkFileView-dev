@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kkfileview
+  labels:
+    app.kubernetes.io/name: kkfileview

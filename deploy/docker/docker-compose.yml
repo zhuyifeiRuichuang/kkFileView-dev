@@ -1,0 +1,24 @@
+# kkFileView Docker 部署（单机）
+#
+# 用法：
+#   1) 按需修改同目录下的 application.properties（灵活配置）
+#   2) docker compose up -d
+#
+# 镜像 tag 由代码仓库版本号决定；默认使用 :latest。
+# 如需锁定版本，将 image 改为 ghcr.io/zhuyifeiruichuang/kkfileview:5.0.2
+# 配置通过卷挂载到容器固定路径 /opt/kkfileview/config/application.properties，
+# 该路径与镜像版本无关（镜像内已做软链），升级版本无需改动本文件。
+
+services:
+  kkfileview:
+    image: ghcr.io/zhuyifeiruichuang/kkfileview:latest
+    container_name: kkfileview
+    restart: unless-stopped
+    ports:
+      - "8012:8012"
+    volumes:
+      # 挂载宿主机配置文件，实现灵活配置（只读）
+      - ./application.properties:/opt/kkfileview/config/application.properties:ro
+    environment:
+      # 如需覆盖配置，可通过环境变量传入（配置文件中大量使用 ${KK_*} 占位符）
+      TZ: Asia/Shanghai
