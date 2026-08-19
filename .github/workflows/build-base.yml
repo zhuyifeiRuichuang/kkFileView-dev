@@ -39,6 +39,8 @@ jobs:
       # 构建并推送基础镜像 :latest。
       # 缓存策略：使用 inline cache（内嵌在 :latest 镜像中），不再额外发布 :cache tag。
       # 这样 GHCR 里只出现 :latest 一个 tag，避免污染。
+      # --provenance=false 禁用 BuildKit 默认生成的 SLSA provenance 附加 manifest，
+      # 避免在 GHCR OS/Arch 列表里出现多余的 unknown/unknown 条目。
       - name: Build and push base image :latest (amd64 + arm64)
         run: |
           docker buildx build \
@@ -47,5 +49,6 @@ jobs:
             --tag "${BASE_IMAGE}:latest" \
             --cache-from type=registry,ref="${BASE_IMAGE}:latest" \
             --cache-to type=inline \
+            --provenance=false \
             --push \
             building/base
