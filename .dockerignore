@@ -1,0 +1,22 @@
+# 最终镜像构建上下文为仓库根目录，需包含 server/target/*.tar.gz
+# 以下排除与最终镜像无关的目录/文件，缩小构建上下文、加速传输
+.git
+.github
+doc
+tests
+server/src
+server/.mvn
+*.md
+.idea
+.vscode
+*.iml
+.DS_Store
+.apt_generated
+.classpath
+.project
+.settings
+.springBeans
+
+# 注意：必须保留 server/target（Maven 打包产物，最终镜像 ADD 的对象）
+!server/target
+!server/target/**
