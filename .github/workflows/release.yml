@@ -6,7 +6,8 @@ name: Release
 #      若 :latest 尚不存在则回退为从源码构建并打 :<版本> 与 :latest）
 #   3) Maven 打包，产出 tar.gz 发行包 + 独立可运行 jar
 #   4) 多架构构建并推送最终镜像 :<版本> 与 :latest
-#   5) 创建 GitHub Release，上传 tar.gz 与 jar 两类制品
+#   5) 冒烟测试刚发布的真实镜像（仅健康检查 / 200 + 启动日志标志），跑完即销毁
+#   6) 创建 GitHub Release，上传 tar.gz 与 jar 两类制品
 on:
   push:
     tags:
@@ -83,6 +84,37 @@ jobs:
             --cache-to type=registry,ref="${FINAL_IMAGE}:cache",mode=max \
             --push \
             .
+
+      # 冒烟测试：拉取刚发布的真实镜像并运行，验证服务可正常启动并响应
+      # 仅做健康检查（/ 返回 200 + 启动日志标志），轻量稳定；跑完即销毁
+      # 位于「推送镜像」之后、「创建 Release」之前：镜像不健康则流程失败，不会产出绿色 Release
+      - name: Smoke test published image
+        run: |
+          set -euo pipefail
+          IMG="${FINAL_IMAGE}:${VERSION}"
+          echo "Pulling ${IMG}"
+          docker pull "${IMG}"
+          CID=$(docker run -d --rm -p 8012:8012 "${IMG}")
+          trap 'docker stop "${CID}" >/dev/null 2>&1 || true' EXIT
+          ready=false
+          for i in $(seq 1 120); do
+            if curl -fsS http://127.0.0.1:8012/ >/dev/null 2>&1; then
+              ready=true
+              break
+            fi
+            sleep 2
+          done
+          if [ "$ready" != "true" ]; then
+            echo "ERROR: kkFileView did not become ready within 240s"
+            docker logs "${CID}" || true
+            exit 1
+          fi
+          echo "OK: GET / returned 200"
+          if docker logs "${CID}" 2>&1 | grep -qi "Started"; then
+            echo "OK: startup completion flag found in logs"
+          else
+            echo "WARN: 'Started' flag not found in logs (service responded 200, treating as OK)"
+          fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
