@@ -30,6 +30,12 @@ ENV KKFILEVIEW_BIN_FOLDER=/opt/kkfileview/bin \
 
 EXPOSE 8012
 
+# 原生健康检查：基础镜像（ubuntu:24.04）未安装 curl/wget，故用 bash /dev/tcp
+# 对 8012 端口做 TCP 连通性检查（校验监听已就绪）。start-period 120s 容忍
+# JVM + LibreOffice 冷启动。k8s 侧另用 httpGet 做应用级（HTTP 200）健康检查。
+HEALTHCHECK --start-period=120s --interval=30s --timeout=5s --retries=3 \
+  CMD bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/8012'
+
 # 通过 -Dspring.config.location 指定外部配置，便于挂载 application.properties 实现灵活配置
 # 通配符 /opt/kkFileView-*/bin/kkFileView-*.jar 由 sh 展开，天然适配版本号变化
 ENTRYPOINT ["sh", "-c", "exec java -Dfile.encoding=UTF-8 -Dspring.config.location=/opt/kkfileview/config/application.properties -jar /opt/kkFileView-*/bin/kkFileView-*.jar"]

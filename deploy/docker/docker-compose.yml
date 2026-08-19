@@ -22,3 +22,12 @@ services:
     environment:
       # 如需覆盖配置，可通过环境变量传入（配置文件中大量使用 ${KK_*} 占位符）
       TZ: Asia/Shanghai
+
+    # 健康检查：复用镜像内置机制（bash /dev/tcp 校验 8012 监听就绪）。
+    # 基础镜像无 curl，故不依赖外部 HTTP 客户端；start_period 120s 容忍冷启动。
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/8012'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s

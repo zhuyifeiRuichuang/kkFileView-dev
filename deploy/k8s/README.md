@@ -52,3 +52,16 @@ kubectl apply -f service-nodeport.yaml
 - 集群内部：`http://kkfileview-clusterip.kkfileview.svc:8012`
 - 节点端口：`http://<任意节点IP>:30812`
 - 如需 Ingress / 域名，请按需自行补充 Ingress 资源。
+
+## 健康检查
+
+Deployment 配置了三类探针（`httpGet` 由 kubelet 在节点侧发起，**不依赖容器内是否安装 curl 等工具**）：
+
+- `startupProbe`：最长 180s 宽限期（periodSeconds 10 × failureThreshold 18），避免 JVM + LibreOffice 冷启动期间被 liveness 误杀。
+- `readinessProbe`：就绪后（HTTP 200）才纳入 Service 流量。
+- `livenessProbe`：持续异常（HTTP 失败）时重启容器。
+
+```bash
+kubectl get pods -n kkfileview
+kubectl describe pod -n kkfileview <pod>   # 查看探针事件与失败原因
+```
