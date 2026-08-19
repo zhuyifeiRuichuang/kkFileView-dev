@@ -1,13 +1,18 @@
 name: Release
 
-# 推送 semver tag（如 v5.0.2）时触发全量发布。严格线性流程：
+# 推送 semver tag（如 v5.0.2）时触发全量发布。严格线性流程（顺序锁死）：
 #   1) 解析版本号（去掉前缀 v）
 #   2) Maven 打包，产出 tar.gz 发行包 + 独立可运行 jar（先得 jar）
 #   3) 确保基础镜像 :<版本> 存在（优先用 imagetools 把 :latest 别名复用，避免重复构建；
 #      若 :latest 尚不存在则回退为从源码构建并打 :<版本> 与 :latest）
 #   4) 多架构构建并推送最终镜像 :<版本> 与 :latest（FROM 基础镜像 + ADD jar 发行包）
-#   5) 冒烟测试刚发布的真实镜像（docker run 真实镜像，健康检查 / 200 + 启动日志标志），跑完即销毁
-#   6) 创建 GitHub Release，上传 tar.gz 与 jar 两类制品
+#   5) 冒烟测试刚发布的真实镜像（docker run 真实镜像，健康检查 / 200），跑完即销毁
+#   6) 上传 tar.gz 与 jar 制品为 workflow artifact（供 publish job 使用）
+#   7) 自动调用 Deploy Test（workflow_call）用 deploy/ 真实部署文件验证
+#   8) 部署测试通过后，由独立 publish job 创建 GitHub Release 并上传制品
+#
+# 顺序要点：打包 → 基础镜像 → 最终镜像 → 冒烟 → 部署测试 → 发布 Release。
+# 只有「部署测试通过」后才会创建 GitHub Release（制品发布），测试失败不对外发布。
 #
 # 缓存策略：inline cache，不发布额外的 :cache tag。
 on:
@@ -128,19 +133,17 @@ jobs:
             echo "WARN: 'Started' flag not found in logs (service responded 200, treating as OK)"
           fi
 
-      # 步骤 6：创建 GitHub Release，上传 tar.gz 与 jar 两类制品
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      # 步骤 6：上传发行制品（tar.gz + jar）为 workflow artifact，供 publish job 发布 Release 使用。
+      # 不再在此处创建 GitHub Release——改为在 deploy-test 通过后由独立的 publish job 创建，
+      # 保证「部署测试通过才发布制品」。
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ github.ref_name }}
-          name: kkFileView ${{ env.VERSION }}
-          files: |
+          name: kkfileview-dist
+          path: |
             server/target/kkFileView-*.tar.gz
             server/target/kkFileView-*.jar
-          generate_release_notes: true
-          skip_if_release_exists: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          if-no-files-found: error
 
   # 步骤 7：发布完成后，自动调用 Deploy Test 工作流验证真实部署文件可用性。
   # 通过 workflow_call 复用 deploy-test.yml；只要 release（含镜像推送）成功，即自动测试。
@@ -151,3 +154,37 @@ jobs:
     permissions:
       contents: read
       packages: read   # 拉取 GHCR 上的镜像
+
+  # 步骤 8：部署测试通过后才创建 GitHub Release 并上传制品。
+  # needs: deploy-test 保证「测试通过才发布」；制品来自 release job 上传的 artifact。
+  publish:
+    name: Publish Release
+    needs: deploy-test
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write   # 创建 Release
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Resolve version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: kkfileview-dist
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: kkFileView ${{ env.VERSION }}
+          files: |
+            dist/kkFileView-*.tar.gz
+            dist/kkFileView-*.jar
+          generate_release_notes: true
+          skip_if_release_exists: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
