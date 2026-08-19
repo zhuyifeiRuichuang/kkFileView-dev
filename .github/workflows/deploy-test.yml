@@ -1,0 +1,140 @@
+name: Deploy Test
+
+# 在「Release」工作流成功完成后，自动用 deploy/ 下的真实部署文件在 GitHub 免费
+# runner 里把服务跑起来并验证可访问；同时也支持手动触发（workflow_dispatch）。
+# 两个环境（Docker Compose / Kubernetes-kind）并行验证，覆盖 deploy/docker 与
+# deploy/k8s 两套清单。镜像统一拉取已发布的 ghcr.io/zhuyifeiruichuang/kkfileview:latest。
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read   # 拉取 GHCR 上的镜像
+
+jobs:
+  docker-deploy-test:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 使用 deploy/docker/docker-compose.yml 真实部署文件拉起服务
+      - name: Start stack via docker compose (deploy/docker)
+        working-directory: deploy/docker
+        run: |
+          docker compose pull
+          docker compose up -d
+
+      # 验证：等待容器 healthy（镜像内置 bash /dev/tcp 健康检查），再断言 HTTP 200
+      - name: Verify deployment (health + HTTP 200)
+        run: |
+          set -euo pipefail
+          echo "Waiting for container to become healthy..."
+          healthy=false
+          for i in $(seq 1 60); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' kkfileview 2>/dev/null || echo "n/a")
+            echo "  health=$status (attempt $i/60)"
+            if [ "$status" = "healthy" ]; then healthy=true; break; fi
+            sleep 5
+          done
+          if [ "$healthy" != "true" ]; then
+            echo "ERROR: container did not become healthy"
+            docker logs kkfileview || true
+            exit 1
+          fi
+          echo "Waiting for HTTP 200 on :8012..."
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8012/ >/dev/null 2>&1; then
+              echo "OK: GET / returned 200"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "ERROR: GET / did not return 200 within timeout"
+          docker logs kkfileview || true
+          exit 1
+
+      - name: Tear down
+        if: always()
+        working-directory: deploy/docker
+        run: docker compose down -v
+
+  k8s-deploy-test:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 在 runner 侧（已登录）拉取镜像，稍后 load 进 kind 节点，绕开节点侧 GHCR 鉴权
+      - name: Pull image on runner (authenticated)
+        run: docker pull ghcr.io/zhuyifeiruichuang/kkfileview:latest
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: kkfileview-test
+          wait: 120s
+
+      - name: Load image into kind
+        run: kind load docker-image ghcr.io/zhuyifeiruichuang/kkfileview:latest --name kkfileview-test
+
+      - name: Install kubectl
+        run: |
+          set -euo pipefail
+          VER=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
+          curl -fsSLO "https://dl.k8s.io/release/${VER}/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      # 使用 deploy/k8s/ 真实清单（kustomize）部署
+      - name: Apply k8s manifests (deploy/k8s)
+        run: kubectl apply -k deploy/k8s/
+
+      - name: Verify deployment (rollout + HTTP 200)
+        run: |
+          set -euo pipefail
+          kubectl rollout status deployment/kkfileview -n kkfileview --timeout=300s
+          kubectl get pods -n kkfileview
+          kubectl port-forward -n kkfileview svc/kkfileview-clusterip 8012:8012 &
+          PF=$!
+          sleep 5
+          ok=false
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8012/ >/dev/null 2>&1; then
+              echo "OK: GET / returned 200 via k8s service"; ok=true; break
+            fi
+            sleep 5
+          done
+          kill $PF 2>/dev/null || true
+          if [ "$ok" != "true" ]; then
+            echo "ERROR: k8s service did not return 200"
+            kubectl logs -n kkfileview deployment/kkfileview || true
+            exit 1
+          fi
+
+      - name: Tear down kind cluster
+        if: always()
+        run: kind delete cluster --name kkfileview-test || true
