@@ -1,13 +1,17 @@
 name: Deploy Test
 
-# 在「Release」工作流成功完成后，自动用 deploy/ 下的真实部署文件在 GitHub 免费
-# runner 里把服务跑起来并验证可访问；同时也支持手动触发（workflow_dispatch）。
+# 在「Release」正式发布（released 事件）后，自动用 deploy/ 下的真实部署文件在
+# GitHub 免费 runner 里把服务跑起来并验证可访问；同时也支持手动触发（workflow_dispatch）。
 # 两个环境（Docker Compose / Kubernetes-kind）并行验证，覆盖 deploy/docker 与
 # deploy/k8s 两套清单。镜像统一拉取已发布的 ghcr.io/zhuyifeiruichuang/kkfileview:latest。
+#
+# 触发改用 release: types: [released] 而非 workflow_run：workflow_run 监听「由 tag
+# 触发的 Release」完成后经常不可靠地不触发下游（GitHub 已知行为）；released 事件是
+# 发布成功后才发出的全局事件，不依赖上游 workflow 是否在默认分支运行，可靠性更高，
+# 且天然满足「发版成功才验证」。
 on:
-  workflow_run:
-    workflows: ["Release"]
-    types: [completed]
+  release:
+    types: [released]
   workflow_dispatch:
 
 permissions:
@@ -16,7 +20,7 @@ permissions:
 
 jobs:
   docker-deploy-test:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'release' }}
     runs-on: ubuntu-22.04
     defaults:
       run:
@@ -74,7 +78,7 @@ jobs:
         run: docker compose down -v
 
   k8s-deploy-test:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'release' }}
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout repository
