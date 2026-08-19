@@ -6,7 +6,7 @@ This directory builds the **base** image (`kkfileview-base`) that bundles the he
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile` | Installs OS + JRE 21 + LibreOffice + CJK fonts. Contains **no** application code. |
+| `Dockerfile` | Installs OS + JRE 21 + LibreOffice + CJK fonts, creates the non-root runtime user `kk` (uid/gid 10001). Contains **no** application code. |
 | `fonts/.gitkeep` | Keeps the (otherwise empty) fonts directory under version control. |
 | `README.md` / `README.cn.md` | This documentation (English / Chinese). |
 
@@ -22,7 +22,13 @@ The base image **does not differentiate by version** — it only carries a singl
 
 ## Built automatically (recommended)
 
-You normally do **not** build the base image by hand. The `build-base.yml` workflow rebuilds and pushes `ghcr.io/zhuyifeiruichuang/kkfileview-base:latest` **only when files under `building/base/**` change** (path filter), so the expensive LibreOffice layer is not rebuilt on every code change. At release time, `release.yml` simply checks that `:latest` exists (and falls back to building it from source if missing) — no version tags are created for the base image.
+You normally do **not** build the base image by hand. The `build-base.yml` workflow rebuilds and pushes `ghcr.io/zhuyifeiruichuang/kkfileview-base:latest`:
+
+1. **On file change** — only when files under `building/base/**` change (path filter), so the expensive LibreOffice layer is not rebuilt on every code change.
+2. **On a weekly schedule** (Monday 03:00 UTC) — rebuilds to pull the latest security patches (LibreOffice / OpenJDK CVE fixes) from the Ubuntu repos, which a file-change trigger alone would never fetch.
+3. **Manually** — via `workflow_dispatch`.
+
+At release time, `release.yml` simply checks that `:latest` exists (and falls back to building it from source if missing) — no version tags are created for the base image.
 
 To force a rebuild manually:
 
@@ -30,6 +36,12 @@ To force a rebuild manually:
 gh workflow run build-base.yml
 # or simply push any change under building/base/**
 ```
+
+## Runtime notes
+
+- **Non-root user** — the image creates `kk` (uid/gid `10001`) so the final image can drop privileges via `USER kk`.
+- **No mirror swap** — the Dockerfile does not replace `archive.ubuntu.com` with a mirror: GitHub Actions runners are hosted overseas where the default source is fastest.
+- **Fonts** — `ttf-mscorefonts-installer` (a flaky SourceForge download) is replaced with Ubuntu repo fonts that are metrically compatible: `fonts-liberation` (≈ Arial/Times/Courier), `fonts-crosextra-carlito` (≈ Calibri), `fonts-crosextra-caladea` (≈ Cambria), plus `ttf-wqy-*` CJK fonts.
 
 ## Manual build (local)
 

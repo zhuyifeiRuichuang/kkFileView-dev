@@ -14,8 +14,9 @@ This directory builds the **final** runtime image that actually runs kkFileView.
 1. **FROM base** — `ghcr.io/zhuyifeiruichuang/kkfileview-base:latest` provides OS + JRE 21 + LibreOffice + CJK fonts. The base image does not differentiate by version — it always uses `:latest`.
 2. **ADD distribution** — `server/target/kkFileView-*.tar.gz` (produced by `mvn package`) is extracted into `/opt`, yielding `/opt/kkFileView-<version>`.
 3. **Version-independent symlink** — `/opt/kkfileview -> /opt/kkFileView-<version>` so deployment mount paths stay fixed regardless of version.
-4. **HEALTHCHECK** — a native check using `bash /dev/tcp` on port 8012 (the base image has no curl). `start_period` is 120s to tolerate cold start.
-5. **ENTRYPOINT** — starts the jar with `-Dspring.config.location=/opt/kkfileview/config/application.properties` so the externally mounted config file is always used.
+4. **Non-root runtime user** — the distribution directory is chowned to `kk` (uid/gid 10001, created in the base image) and the image switches to `USER kk` with `HOME=/home/kk`. The app writes preview artifacts to `<app root>/file/` by default, and LibreOffice/JOD needs a writable home — both are covered. k8s manifests mirror this with `securityContext.runAsUser/runAsGroup/fsGroup: 10001`.
+5. **HEALTHCHECK** — a native check using `bash /dev/tcp` on port 8012 (the base image has no curl). `start_period` is 120s to tolerate cold start.
+6. **ENTRYPOINT** — starts the jar with `-Dspring.config.location=/opt/kkfileview/config/application.properties` so the externally mounted config file is always used.
 
 ## Build
 

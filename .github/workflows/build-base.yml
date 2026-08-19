@@ -1,11 +1,18 @@
 name: Build Base Image
 
-# 仅在基础镜像相关文件（building/base/**）变更时才重建并推送基础镜像 :latest
-# 避免每次代码变更都重 build 庞大的 LibreOffice 基础镜像（避免重复构建）
+# 触发条件：
+#  1) 基础镜像相关文件（building/base/**）变更时重建——避免每次代码变更都重 build
+#     庞大的 LibreOffice 基础镜像（避免重复构建）
+#  2) 每周定时重建一次（周一 03:00 UTC）——自动拉取 Ubuntu 仓库中的安全补丁。
+#     LibreOffice / OpenJDK 等安全更新（CVE 修复）不会因路径过滤而自动进入镜像，
+#     定时重建 + apt 安装最新版本是让基础镜像保持安全的关键。
+#  3) workflow_dispatch 手动触发
 on:
   push:
     paths:
       - 'building/base/**'
+  schedule:
+    - cron: '0 3 * * 1'
   workflow_dispatch:
 
 permissions:

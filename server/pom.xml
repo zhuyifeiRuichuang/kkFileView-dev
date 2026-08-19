@@ -55,7 +55,9 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-devtools</artifactId>
-            <scope>runtime</scope>
+            <!-- provided：仅本地开发（mvn spring-boot:run）使用，不打进生产 fat jar，
+                 避免 devtools 残留在生产镜像中（无用且有轻微安全/性能影响） -->
+            <scope>provided</scope>
             <optional>true</optional>
         </dependency>
 
