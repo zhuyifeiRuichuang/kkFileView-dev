@@ -25,10 +25,11 @@ ghcr.io/zhuyifeiruichuang/kkfileview-base:latest
 通常你无需手动构建基础镜像。`build-base.yml` 工作流在以下时机重建并推送 `ghcr.io/zhuyifeiruichuang/kkfileview-base:latest`：
 
 1. **文件变更时** —— 仅当 `building/base/**` 下的文件变更（路径过滤），昂贵的 LibreOffice 层不会在每次代码变更时重构建。
-2. **每周定时**（周一 03:00 UTC）—— 自动重建以拉取 Ubuntu 仓库中的最新安全补丁（LibreOffice / OpenJDK 的 CVE 修复）。仅靠文件变更触发永远等不到这些安全更新。
-3. **手动触发** —— 通过 `workflow_dispatch`。
+2. **手动触发** —— 通过 `workflow_dispatch`。
 
-发版时，`release.yml` 只需检查 `:latest` 是否存在（若缺失则从源码兜底构建）——基础镜像不创建任何版本号 tag。
+每次构建都用 `--no-cache` + `--pull` 强制全量重建并拉取最新 `ubuntu:24.04` 基础层，`apt-get update` 始终安装最新 Ubuntu 仓库包（含 LibreOffice / OpenJDK 的 CVE 修复），不依赖可能跳过 apt 层的 inline cache。
+
+发版时，`release.yml` 同样从源码全量重建基础镜像（同样 `--no-cache` + `--pull`），确保发布的最终镜像始终基于带最新安全补丁的基础镜像。基础镜像不创建任何版本号 tag。
 
 如需手动强制重建：
 

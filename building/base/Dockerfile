@@ -1,6 +1,7 @@
 # 基础镜像：仅打包运行环境（JRE 21 + LibreOffice + 字体），不含应用代码。
-# 不区分版本，只保留 :latest tag；由 build-base.yml 在 building/base/** 变更时
-# 重建，并每周定时重建一次以自动拉取 Ubuntu 安全补丁。
+# 不区分版本，只保留 :latest tag；由 build-base.yml 在 building/base/** 变更时重建。
+# 安全补丁：每次构建都 --no-cache 全量重建 + --pull 拉最新 ubuntu:24.04，
+# apt-get update 安装最新 Ubuntu 仓库包（含 CVE 修复），不受缓存命中影响。
 
 FROM ubuntu:24.04
 

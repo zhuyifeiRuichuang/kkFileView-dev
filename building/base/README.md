@@ -25,10 +25,11 @@ The base image **does not differentiate by version** — it only carries a singl
 You normally do **not** build the base image by hand. The `build-base.yml` workflow rebuilds and pushes `ghcr.io/zhuyifeiruichuang/kkfileview-base:latest`:
 
 1. **On file change** — only when files under `building/base/**` change (path filter), so the expensive LibreOffice layer is not rebuilt on every code change.
-2. **On a weekly schedule** (Monday 03:00 UTC) — rebuilds to pull the latest security patches (LibreOffice / OpenJDK CVE fixes) from the Ubuntu repos, which a file-change trigger alone would never fetch.
-3. **Manually** — via `workflow_dispatch`.
+2. **Manually** — via `workflow_dispatch`.
 
-At release time, `release.yml` simply checks that `:latest` exists (and falls back to building it from source if missing) — no version tags are created for the base image.
+Every build uses `--no-cache` + `--pull` to force a full rebuild and pull the latest `ubuntu:24.04` base layer, so `apt-get update` always installs the newest Ubuntu repo packages (including LibreOffice / OpenJDK CVE fixes) — no reliance on inline cache that could skip the apt layer.
+
+At release time, `release.yml` also fully rebuilds the base image from source (same `--no-cache` + `--pull`), so the released final image is always built on a base with the latest security patches. No version tags are created for the base image.
 
 To force a rebuild manually:
 

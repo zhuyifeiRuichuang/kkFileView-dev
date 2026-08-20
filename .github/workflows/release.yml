@@ -3,8 +3,8 @@ name: Release
 # 推送 semver tag（如 v5.0.2）时触发全量发布。严格线性流程（顺序锁死）：
 #   1) 解析版本号（去掉前缀 v）
 #   2) Maven 打包，产出 tar.gz 发行包 + 独立可运行 jar（先得 jar）
-#   3) 构建基础镜像 :latest（每次发版都从源码重建，--cache-from 命中未变层，
-#      确保基于当前代码，消除与 build-base.yml 并行的竞态；base 不绑版本号）
+#   3) 构建基础镜像 :latest（每次发版 --no-cache 全量重建 + --pull 拉最新基础镜像，
+#      确保基于当前代码 + 最新 Ubuntu 安全补丁；base 不绑版本号）
 #   4) 多架构构建并推送最终镜像 :<版本> 与 :latest（FROM 基础镜像 :latest + ADD jar 发行包）
 #   5) 冒烟测试刚发布的真实镜像（docker run 真实镜像，健康检查 / 200），跑完即销毁
 #   6) 上传 tar.gz 与 jar 制品为 workflow artifact（供 publish job 使用）
@@ -14,9 +14,9 @@ name: Release
 # 顺序要点：打包 → 基础镜像 → 最终镜像 → 冒烟 → 部署测试 → 发布 Release。
 # 只有「部署测试通过」后才会创建 GitHub Release（制品发布），测试失败不对外发布。
 #
-# 缓存策略：inline cache，不发布额外的 :cache tag。
-# 基础镜像策略：不区分版本，只保留 :latest；发版时 release.yml 重建（确保基于当前代码），
-# 非发版场景（定时补丁/变更）由 build-base.yml 重建并级联 rebuild-final 更新 final:latest。
+# 缓存策略：base 全量重建（--no-cache + --pull），不使用 inline cache；final 用 inline cache 加速。
+# 基础镜像策略：不区分版本，只保留 :latest；发版时 release.yml 全量重建（确保当前代码+最新补丁），
+# 非发版场景（变更/dispatch）由 build-base.yml 全量重建并级联 rebuild-final 更新 final:latest。
 on:
   push:
     tags:
@@ -63,19 +63,18 @@ jobs:
       - name: Build with Maven (package)
         run: mvn -B package -Dmaven.test.skip=true --file pom.xml
 
-      # 步骤 3：构建基础镜像 :latest（每次发版都从源码重建，确保基于当前代码）。
-      # --cache-from 命中 GHCR 上 :latest 的 inline cache，未变层秒过，只重 build 变化层。
-      # base 不区分版本，只 :latest，不绑发版版本号。
-      # 每次发版都重建，消除「推 tag 与 build-base.yml 并行时命中旧 base」的竞态。
-      - name: Build base image :latest (from source, with cache)
+      # 步骤 3：构建基础镜像 :latest（每次发版 --no-cache 全量重建 + --pull 拉最新基础镜像）。
+      # 确保 apt-get update 安装最新 Ubuntu 仓库包（含安全补丁），不受缓存命中影响；
+      # 同时确保基于当前代码，消除与 build-base.yml 并行的竞态。base 不绑版本号。
+      - name: Build base image :latest (from source, no cache)
         run: |
           set -euo pipefail
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --file building/base/Dockerfile \
             --tag "${BASE_IMAGE}:latest" \
-            --cache-from type=registry,ref="${BASE_IMAGE}:latest" \
-            --cache-to type=inline \
+            --pull \
+            --no-cache \
             --provenance=false \
             --push \
             --metadata-file base-meta.json \
