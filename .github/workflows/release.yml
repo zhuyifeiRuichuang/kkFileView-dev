@@ -7,7 +7,8 @@ name: Release
 #      确保基于当前代码 + 最新 Ubuntu 安全补丁；base 不绑版本号）
 #   4) 多架构构建并推送最终镜像 :<版本> 与 :latest（FROM 基础镜像 :latest + ADD jar 发行包）
 #   5) 冒烟测试刚发布的真实镜像（docker run 真实镜像，健康检查 / 200），跑完即销毁
-#   6) 上传 tar.gz 与 jar 制品为 workflow artifact（供 publish job 使用）
+#   6) 上传 tar.gz 与 jar 制品为 workflow artifact（供 publish job 使用）；
+#      images.txt 仅写入 Release body，不作为 Assets 附件
 #   7) 自动调用 Deploy Test（workflow_call）用 deploy/ 真实部署文件验证
 #   8) 部署测试通过后，由独立 publish job 创建 GitHub Release 并上传制品
 #
@@ -148,17 +149,30 @@ jobs:
           echo "===== images.txt ====="
           cat images.txt
 
-      # 步骤 7：上传发行制品（tar.gz + jar + images.txt）为 workflow artifact，供 publish job 发布 Release 使用。
+      # 步骤 7：把真正需要发布到 GitHub Release 的制品整理到 dist/ 目录。
+      # - 代码编译产物：jar
+      # - 代码打包产物：tar.gz（Linux 发行包）
+      # - images.txt 仅用于生成 Release body 文字，不进入 Assets。
+      # 使用扁平 dist/ 目录，避免 upload-artifact 保留 server/target 嵌套路径，
+      # 导致 publish job 的 files glob 匹配不到。
+      - name: Stage release artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "server/target/kkFileView-${VERSION}.jar" dist/
+          cp "server/target/kkFileView-${VERSION}.tar.gz" dist/
+          cp images.txt dist/
+          echo "===== staged dist/ ====="
+          ls -lh dist/
+
+      # 步骤 8：上传整理后的制品为 workflow artifact，供 publish job 发布 Release 使用。
       # 不再在此处创建 GitHub Release——改为在 deploy-test 通过后由独立的 publish job 创建，
       # 保证「部署测试通过才发布制品」。
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
           name: kkfileview-dist
-          path: |
-            server/target/kkFileView-*.tar.gz
-            server/target/kkFileView-*.jar
-            images.txt
+          path: dist/
           if-no-files-found: error
 
   # 步骤 7：发布完成后，自动调用 Deploy Test 工作流验证真实部署文件可用性。
@@ -195,6 +209,17 @@ jobs:
           name: kkfileview-dist
           path: dist
 
+      - name: Read image digests for release body
+        id: images
+        run: |
+          set -euo pipefail
+          # 将多行内容写入 GITHUB_OUTPUT，使用 heredoc 语法
+          {
+            echo "body<<EOF"
+            cat dist/images.txt
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -205,11 +230,10 @@ jobs:
             - Base: `${{ env.BASE_IMAGE }}:latest`
             - Final: `${{ env.FINAL_IMAGE }}:${{ env.VERSION }}` / `:latest`
 
-            Image digests (sha256): see `images.txt` attachment.
+            ${{ steps.images.outputs.body }}
           files: |
             dist/kkFileView-*.tar.gz
             dist/kkFileView-*.jar
-            dist/images.txt
           generate_release_notes: true
           skip_if_release_exists: true
         env:
