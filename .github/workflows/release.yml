@@ -78,6 +78,7 @@ jobs:
             --cache-to type=inline \
             --provenance=false \
             --push \
+            --metadata-file base-meta.json \
             building/base
 
       # 步骤 4：构建最终镜像（FROM 基础镜像 :latest + ADD 上一步的 jar 发行包），多架构推送
@@ -93,6 +94,7 @@ jobs:
             --cache-to type=inline \
             --provenance=false \
             --push \
+            --metadata-file final-meta.json \
             .
 
       # 步骤 5：部署测试 —— 拉取刚发布的真实最终镜像并运行，验证服务可正常启动并响应。
@@ -126,7 +128,28 @@ jobs:
             echo "WARN: 'Started' flag not found in logs (service responded 200, treating as OK)"
           fi
 
-      # 步骤 6：上传发行制品（tar.gz + jar）为 workflow artifact，供 publish job 发布 Release 使用。
+      # 步骤 6：记录 base 与 final 镜像的 digest，生成 images.txt 作为发版制品。
+      # 两镜像都已在 GHCR（步骤 3/4 推送），此处固化 digest 供 Release 引用，
+      # 实现「base 和 final 都作为制品输出到 GitHub」。digest 取自 buildx --metadata-file。
+      - name: Record image digests
+        run: |
+          set -euo pipefail
+          BASE_DIGEST=$(python3 -c "import json;print(json.load(open('base-meta.json'))['containerimage.digest'])")
+          FINAL_DIGEST=$(python3 -c "import json;print(json.load(open('final-meta.json'))['containerimage.digest'])")
+          {
+            echo "# Container images published for kkFileView ${VERSION}"
+            echo ""
+            echo "## Base image (runtime: Ubuntu + JRE 21 + LibreOffice + CJK fonts)"
+            echo "${BASE_IMAGE}:latest@${BASE_DIGEST}"
+            echo ""
+            echo "## Final image (base + kkFileView application)"
+            echo "${FINAL_IMAGE}:${VERSION}@${FINAL_DIGEST}"
+            echo "${FINAL_IMAGE}:latest@${FINAL_DIGEST}   (same image as :${VERSION})"
+          } > images.txt
+          echo "===== images.txt ====="
+          cat images.txt
+
+      # 步骤 7：上传发行制品（tar.gz + jar + images.txt）为 workflow artifact，供 publish job 发布 Release 使用。
       # 不再在此处创建 GitHub Release——改为在 deploy-test 通过后由独立的 publish job 创建，
       # 保证「部署测试通过才发布制品」。
       - name: Upload release artifacts
@@ -136,6 +159,7 @@ jobs:
           path: |
             server/target/kkFileView-*.tar.gz
             server/target/kkFileView-*.jar
+            images.txt
           if-no-files-found: error
 
   # 步骤 7：发布完成后，自动调用 Deploy Test 工作流验证真实部署文件可用性。
@@ -160,8 +184,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Resolve version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - name: Resolve version & image vars
+        run: |
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          echo "BASE_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/kkfileview-base" >> "$GITHUB_ENV"
+          echo "FINAL_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/kkfileview" >> "$GITHUB_ENV"
 
       - name: Download release artifacts
         uses: actions/download-artifact@v4
@@ -174,9 +201,16 @@ jobs:
         with:
           tag_name: ${{ github.ref_name }}
           name: kkFileView ${{ env.VERSION }}
+          body: |
+            ## Container images
+            - Base: `${{ env.BASE_IMAGE }}:latest`
+            - Final: `${{ env.FINAL_IMAGE }}:${{ env.VERSION }}` / `:latest`
+
+            Image digests (sha256): see `images.txt` attachment.
           files: |
             dist/kkFileView-*.tar.gz
             dist/kkFileView-*.jar
+            dist/images.txt
           generate_release_notes: true
           skip_if_release_exists: true
         env:
